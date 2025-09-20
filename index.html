@@ -273,7 +273,6 @@
                 gradient.animate();
             })();
 
-            // --- FIXED VOLUME CONTROLS ---
             const volumeIcons = {
                 mute: `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.683 4.707 11 5.093 11 5.586v12.828c0 .493-.317.88-.707.586L5.586 15zM17 14l-4-4m0 4l4-4"></path></svg>`,
                 low: `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.683 4.707 11 5.093 11 5.586v12.828c0 .493-.317.88-.707.586L5.586 15z"></path></svg>`,
@@ -346,7 +345,7 @@
                 const centerX = waveformCanvas.width / 2;
                 const centerY = waveformCanvas.height / 2;
                 const radius = waveformCanvas.width / 3.5;
-                const bars = dataArray.length * 0.8;
+                const bars = (window.innerWidth < 768 ? dataArray.length * 0.6 : dataArray.length * 0.8); // Optimization for mobile
                 const barWidth = 2;
 
                 for (let i = 0; i < bars; i++) {
@@ -373,7 +372,9 @@
 
             const togglePlay = () => {
                 if (!audioContext) setupAudioContext();
-                if (audioContext.state === 'suspended') audioContext.resume();
+                if (audioContext && audioContext.state === 'suspended') {
+                    audioContext.resume();
+                }
                 
                 if (isPlaying) player.pause();
                 else {
@@ -385,17 +386,35 @@
                 }
             };
             
-            playerCore.addEventListener('mousemove', e => {
+            // --- UPDATED: 3D effect for both mouse and touch ---
+            function handle3DRotation(clientX, clientY) {
                 const rect = playerCore.getBoundingClientRect();
-                const x = e.clientX - rect.left - rect.width / 2;
-                const y = e.clientY - rect.top - rect.height / 2;
+                const x = clientX - rect.left - rect.width / 2;
+                const y = clientY - rect.top - rect.height / 2;
                 const rotateY = (x / rect.width) * 20;
                 const rotateX = (y / rect.height) * -20;
                 playPauseBtn.style.transform = `rotateX(${rotateX}deg) rotateY(${rotateY}deg)`;
-            });
-            playerCore.addEventListener('mouseleave', () => {
+            }
+
+            function resetRotation() {
                 playPauseBtn.style.transform = `rotateX(0deg) rotateY(0deg)`;
+            }
+
+            // Mouse events for PC
+            playerCore.addEventListener('mousemove', e => {
+                handle3DRotation(e.clientX, e.clientY);
             });
+            playerCore.addEventListener('mouseleave', resetRotation);
+
+            // Touch events for Mobile
+            playerCore.addEventListener('touchmove', e => {
+                if (e.touches.length > 0) {
+                    handle3DRotation(e.touches[0].clientX, e.touches[0].clientY);
+                }
+            }, { passive: true });
+            playerCore.addEventListener('touchend', resetRotation);
+            playerCore.addEventListener('touchcancel', resetRotation);
+
 
             playPauseBtn.addEventListener('click', togglePlay);
 
