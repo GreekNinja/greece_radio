@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="el">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Πειραϊκή Εκκλησία</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --accent-color: hsl(210, 100%, 70%);
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            touch-action: manipulation;
+            background-color: #02040a;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+        }
+
+        #background-canvas {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            z-index: -1;
+        }
+
+        .glass-panel {
+            background: rgba(10, 20, 40, 0.5);
+            backdrop-filter: blur(40px);
+            -webkit-backdrop-filter: blur(40px);
+            border-radius: 2.5rem;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
+            padding: 2rem;
+            width: 90%;
+            max-width: 400px;
+            transform-style: preserve-3d;
+        }
+
+        .player-core {
+            position: relative;
+            width: 200px;
+            height: 200px;
+            margin: 1.5rem auto;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            perspective: 1000px;
+        }
+        
+        #waveform-canvas {
+            position: absolute; top: 0; left: 0;
+            width: 100%; height: 100%;
+            opacity: 0;
+            transform: scale(0.5);
+            transition: opacity 0.6s ease, transform 0.6s cubic-bezier(0.18, 0.89, 0.32, 1.28);
+        }
+        
+        .playing #waveform-canvas {
+            opacity: 1;
+            transform: scale(1);
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(15px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .fade-in { animation: fadeIn 1s ease-out forwards; animation-fill-mode: backwards; }
+        .delay-1 { animation-delay: 0.1s; }
+        .delay-2 { animation-delay: 0.2s; }
+        .delay-3 { animation-delay: 0.3s; }
+        .delay-4 { animation-delay: 0.4s; }
+
+        #play-pause-btn {
+            position: relative; z-index: 10;
+            border: none;
+            background: rgba(255, 255, 255, 0.1);
+            transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+            transform: rotateX(0deg) rotateY(0deg);
+        }
+        #play-pause-btn:active {
+            transform: scale(0.92) !important;
+        }
+
+        #play-pause-btn svg {
+            position: absolute;
+            transition: transform 0.3s cubic-bezier(0.18, 0.89, 0.32, 1.28), opacity 0.3s ease;
+            filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3));
+        }
+        #play-icon.hidden, #pause-icon.hidden {
+            transform: scale(0.5);
+            opacity: 0;
+        }
+
+        #status-text {
+            transition: opacity 0.3s ease-out, transform 0.3s ease-out;
+        }
+        #status-text.changing {
+            opacity: 0;
+            transform: translateY(5px);
+        }
+        
+        input[type=range] {
+            -webkit-appearance: none;
+            width: 100%; background: transparent;
+        }
+        input[type=range]:focus { outline: none; }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 18px; width: 18px;
+            border-radius: 50%;
+            background: #fff;
+            cursor: pointer;
+            margin-top: -7.5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            transition: transform 0.2s ease;
+        }
+        input[type=range]:hover::-webkit-slider-thumb {
+            transform: scale(1.1);
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%; height: 3px;
+            cursor: pointer;
+            background: linear-gradient(to right, var(--accent-color) var(--volume-progress, 100%), rgba(255, 255, 255, 0.2) var(--volume-progress, 100%));
+            border-radius: 3px;
+        }
+        
+        .loader {
+            display: flex; gap: 4px;
+        }
+        .loader span {
+            width: 8px; height: 8px;
+            background-color: rgba(255, 255, 255, 0.6);
+            border-radius: 50%;
+            animation: bounce 1.2s infinite ease-in-out;
+        }
+        .loader span:nth-child(2) { animation-delay: -0.2s; }
+        .loader span:nth-child(3) { animation-delay: -0.4s; }
+        @keyframes bounce {
+            0%, 80%, 100% { transform: scale(0.5); opacity: 0.5; }
+            40% { transform: scale(1.0); opacity: 1; }
+        }
+
+        @media (max-width: 480px) {
+            .glass-panel { padding: 1.5rem; border-radius: 2rem; }
+            .player-core { width: 160px; height: 160px; }
+            h1 { font-size: 1.5rem; }
+            .text-lg { font-size: 1rem; }
+            #play-pause-btn { width: 5rem; height: 5rem; }
+            #play-pause-btn svg { width: 2.25rem; height: 2.25rem; }
+        }
+    </style>
+</head>
+<body>
+    <canvas id="background-canvas"></canvas>
+    <div class="glass-panel text-center">
+        <div class="fade-in delay-1">
+            <img src="https://www.inp.gr/wp-content/uploads/2020/12/peiraiki_logo-1.png" alt="Λογότυπο Πειραϊκής Εκκλησίας" class="h-14 sm:h-16 mx-auto mb-3 rounded-lg" onerror="this.style.display='none'">
+            <h1 class="text-2xl sm:text-3xl font-bold text-slate-100">Πειραϊκή Εκκλησία</h1>
+            <p class="text-md sm:text-lg text-sky-300">91.2 FM</p>
+        </div>
+
+        <div class="player-core fade-in delay-2" id="player-core">
+            <canvas id="waveform-canvas"></canvas>
+            <button id="play-pause-btn" class="w-24 h-24 sm:w-28 sm:h-28 rounded-full flex items-center justify-center">
+                <svg id="play-icon" class="w-10 h-10 sm:w-12 sm:h-12 text-white ml-1" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M8 5.14v14l11-7-11-7z"></path>
+                </svg>
+                <svg id="pause-icon" class="w-10 h-10 sm:w-12 sm:h-12 text-white hidden" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"></path>
+                </svg>
+            </button>
+        </div>
+
+        <div class="h-7 flex items-center justify-center fade-in delay-3">
+            <p id="status-text" class="text-slate-300 text-lg">Πατήστε για αναπαραγωγή</p>
+            <div id="loader" class="loader hidden"><span></span><span></span><span></span></div>
+        </div>
+
+        <div id="volume-container" class="w-full max-w-xs mx-auto flex items-center space-x-3 mt-4 fade-in delay-4">
+            <div id="volume-icon-container" class="cursor-pointer text-slate-400 hover:text-white transition-colors"></div>
+            <input id="volume-slider" type="range" min="0" max="100" value="100" class="flex-grow">
+            <span id="volume-percentage" class="w-12 text-center text-sm text-slate-400 font-medium">100%</span>
+        </div>
+    </div>
+    
+    <audio id="player" preload="none" crossorigin="anonymous"></audio>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const streamUrl = "https://impradio2.bytemasters.gr/8002/stream?type=http&nocache=" + Date.now();
+            const body = document.body;
+            const player = document.getElementById('player');
+            const playPauseBtn = document.getElementById('play-pause-btn');
+            const playIcon = document.getElementById('play-icon');
+            const pauseIcon = document.getElementById('pause-icon');
+            const statusText = document.getElementById('status-text');
+            const loader = document.getElementById('loader');
+            const playerCore = document.getElementById('player-core');
+            const waveformCanvas = document.getElementById('waveform-canvas');
+            const waveformCtx = waveformCanvas.getContext('2d');
+            const volumeSlider = document.getElementById('volume-slider');
+            const volumeIconContainer = document.getElementById('volume-icon-container');
+            const volumePercentage = document.getElementById('volume-percentage');
+            const bgCanvas = document.getElementById('background-canvas');
+            const bgCtx = bgCanvas.getContext('2d');
+
+            let isPlaying = false;
+            let audioContext, analyser, source, dataArray;
+            let animationFrameId;
+            let wakeLock = null;
+            let mediaSessionSetup = false;
+            let lastVolume = 1.0;
+            
+            // --- MESH GRADIENT BACKGROUND ---
+            (function() {
+                class Gradient {
+                    constructor() {
+                        this.cnv = bgCanvas;
+                        this.ctx = bgCtx;
+                        this.circles = [];
+                        this.resize();
+                        window.addEventListener('resize', () => this.resize());
+                    }
+                    resize() {
+                        this.circles = [];
+                        this.w = this.cnv.width = window.innerWidth;
+                        this.h = this.cnv.height = window.innerHeight;
+                        for (let i = 0; i < 4; i++) {
+                            this.circles.push(new Circle(this.w, this.h));
+                        }
+                    }
+                    animate() {
+                        this.ctx.clearRect(0, 0, this.w, this.h);
+                        this.circles.forEach(circle => circle.update(this.ctx));
+                        requestAnimationFrame(() => this.animate());
+                    }
+                }
+                class Circle {
+                     constructor(w, h) {
+                        this.w = w; this.h = h;
+                        this.x = Math.random() * w;
+                        this.y = Math.random() * h;
+                        this.angle = Math.random() * Math.PI * 2;
+                        this.speed = 0.01 + Math.random() * 0.03;
+                        this.radius = 150 + Math.random() * 200;
+                        this.color = `hsla(${180 + Math.random() * 80}, 80%, 50%, 0.6)`;
+                    }
+                    update(ctx) {
+                        this.angle += this.speed;
+                        this.x += Math.cos(this.angle) * 0.5;
+                        this.y += Math.sin(this.angle) * 0.5;
+                        if (this.x - this.radius > this.w) this.x = -this.radius;
+                        if (this.x + this.radius < 0) this.x = this.w + this.radius;
+                        if (this.y - this.radius > this.h) this.y = -this.radius;
+                        if (this.y + this.radius < 0) this.y = this.h + this.radius;
+
+                        ctx.fillStyle = this.color;
+                        ctx.filter = 'blur(100px)';
+                        ctx.beginPath();
+                        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                }
+                const gradient = new Gradient();
+                gradient.animate();
+            })();
+
+            // --- FIXED VOLUME CONTROLS ---
+            const volumeIcons = {
+                mute: `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.683 4.707 11 5.093 11 5.586v12.828c0 .493-.317.88-.707.586L5.586 15zM17 14l-4-4m0 4l4-4"></path></svg>`,
+                low: `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.683 4.707 11 5.093 11 5.586v12.828c0 .493-.317.88-.707.586L5.586 15z"></path></svg>`,
+                high: `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.683 4.707 11 5.093 11 5.586v12.828c0 .493-.317.88-.707.586L5.586 15z"></path></svg>`
+            };
+            
+            function updateVolumeSliderFill(element) {
+                element.style.setProperty('--volume-progress', `${element.value}%`);
+            }
+            
+            function updateVolumeUI(volume) {
+                if (volume === 0) volumeIconContainer.innerHTML = volumeIcons.mute;
+                else if (volume < 0.5) volumeIconContainer.innerHTML = volumeIcons.low;
+                else volumeIconContainer.innerHTML = volumeIcons.high;
+                volumePercentage.textContent = `${Math.round(volume * 100)}%`;
+            }
+
+            updateVolumeUI(1); 
+            updateVolumeSliderFill(volumeSlider);
+
+            function updateStatusText(newText, isLoading = false) {
+                if(isLoading) {
+                    statusText.classList.add('hidden');
+                    loader.classList.remove('hidden');
+                } else {
+                    loader.classList.add('hidden');
+                    statusText.classList.remove('hidden');
+                    if (statusText.textContent === newText) return;
+                    statusText.classList.add('changing');
+                    setTimeout(() => {
+                        statusText.textContent = newText;
+                        statusText.classList.remove('changing');
+                    }, 300);
+                }
+            }
+
+            function setupAudioContext() {
+                if (audioContext) return;
+                try {
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    analyser = audioContext.createAnalyser();
+                    analyser.fftSize = 256;
+                    analyser.smoothingTimeConstant = 0.7;
+                    source = audioContext.createMediaElementSource(player);
+                    source.connect(analyser);
+                    analyser.connect(audioContext.destination);
+                    dataArray = new Uint8Array(analyser.frequencyBinCount);
+                } catch(e) { console.error("Web Audio API is not supported.", e); }
+            }
+            
+            const requestWakeLock = async () => { if ('wakeLock' in navigator) { try { wakeLock = await navigator.wakeLock.request('screen'); } catch (err) { console.error(err); } } };
+            const setupMediaSession = () => {
+                if ('mediaSession' in navigator && !mediaSessionSetup) {
+                    navigator.mediaSession.metadata = new MediaMetadata({
+                        title: 'Πειραϊκή Εκκλησία', artist: '91.2 FM', album: 'Ζωντανή Μετάδοση',
+                        artwork: [{ src: 'https://www.inp.gr/wp-content/uploads/2020/12/peiraiki_logo-1.png', sizes: '192x192', type: 'image/png' }]
+                    });
+                    navigator.mediaSession.setActionHandler('play', togglePlay);
+                    navigator.mediaSession.setActionHandler('pause', togglePlay);
+                    mediaSessionSetup = true;
+                }
+            };
+
+            function drawWaveform() {
+                if (!isPlaying) return;
+                animationFrameId = requestAnimationFrame(drawWaveform);
+                analyser.getByteFrequencyData(dataArray);
+
+                waveformCtx.clearRect(0, 0, waveformCanvas.width, waveformCanvas.height);
+                const centerX = waveformCanvas.width / 2;
+                const centerY = waveformCanvas.height / 2;
+                const radius = waveformCanvas.width / 3.5;
+                const bars = dataArray.length * 0.8;
+                const barWidth = 2;
+
+                for (let i = 0; i < bars; i++) {
+                    const barHeight = Math.pow(dataArray[i] / 255, 2) * 80;
+                    const angle = (i / bars) * Math.PI * 2 - Math.PI / 2;
+                    
+                    const startX = centerX + Math.cos(angle) * radius;
+                    const startY = centerY + Math.sin(angle) * radius;
+                    const endX = centerX + Math.cos(angle) * (radius + barHeight);
+                    const endY = centerY + Math.sin(angle) * (radius + barHeight);
+
+                    waveformCtx.strokeStyle = `hsla(210, 100%, ${60 + barHeight * 0.4}%, 0.8)`;
+                    waveformCtx.lineWidth = barWidth;
+                    waveformCtx.beginPath();
+                    waveformCtx.moveTo(startX, startY);
+                    waveformCtx.lineTo(endX, endY);
+                    waveformCtx.stroke();
+                }
+            }
+            
+            function resizeWaveformCanvas() { const size = playerCore.offsetWidth; waveformCanvas.width = size; waveformCanvas.height = size; }
+            window.addEventListener('resize', resizeWaveformCanvas);
+            resizeWaveformCanvas();
+
+            const togglePlay = () => {
+                if (!audioContext) setupAudioContext();
+                if (audioContext.state === 'suspended') audioContext.resume();
+                
+                if (isPlaying) player.pause();
+                else {
+                    if (player.src !== streamUrl) player.src = streamUrl;
+                    player.play().catch(e => {
+                        console.error(e);
+                        updateStatusText('Σφάλμα');
+                    });
+                }
+            };
+            
+            playerCore.addEventListener('mousemove', e => {
+                const rect = playerCore.getBoundingClientRect();
+                const x = e.clientX - rect.left - rect.width / 2;
+                const y = e.clientY - rect.top - rect.height / 2;
+                const rotateY = (x / rect.width) * 20;
+                const rotateX = (y / rect.height) * -20;
+                playPauseBtn.style.transform = `rotateX(${rotateX}deg) rotateY(${rotateY}deg)`;
+            });
+            playerCore.addEventListener('mouseleave', () => {
+                playPauseBtn.style.transform = `rotateX(0deg) rotateY(0deg)`;
+            });
+
+            playPauseBtn.addEventListener('click', togglePlay);
+
+            player.onplay = () => {
+                isPlaying = true; body.classList.add('playing');
+                playIcon.classList.add('hidden'); pauseIcon.classList.remove('hidden');
+                updateStatusText('Αναπαραγωγή...');
+                if(analyser) drawWaveform();
+                requestWakeLock();
+                setupMediaSession();
+            };
+            player.onpause = () => {
+                isPlaying = false; body.classList.remove('playing');
+                playIcon.classList.remove('hidden'); pauseIcon.classList.add('hidden');
+                updateStatusText('Σε παύση');
+                cancelAnimationFrame(animationFrameId);
+                if (wakeLock) { wakeLock.release().then(() => wakeLock = null); }
+            };
+            
+            player.volume = 1.0;
+            volumeSlider.addEventListener('input', (e) => {
+                const volumeValue = e.target.value / 100;
+                player.volume = volumeValue;
+                updateVolumeUI(volumeValue);
+                updateVolumeSliderFill(e.target);
+            });
+            volumeIconContainer.addEventListener('click', () => {
+                if (player.volume > 0) {
+                    lastVolume = player.volume;
+                    player.volume = 0;
+                    volumeSlider.value = 0;
+                } else {
+                    player.volume = lastVolume;
+                    volumeSlider.value = lastVolume * 100;
+                }
+                updateVolumeUI(player.volume);
+                updateVolumeSliderFill(volumeSlider);
+            });
+
+            player.onerror = () => { updateStatusText('Σφάλμα'); isPlaying = false; body.classList.remove('playing'); };
+            player.onwaiting = () => { updateStatusText('Φόρτωση...', true); };
+        });
+    </script>
+</body>
+</html>
+
